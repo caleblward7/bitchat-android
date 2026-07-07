@@ -315,6 +315,19 @@ class UnifiedMeshService(
         delegate?.didReceiveReadReceipt(messageID, recipientPeerID)
     }
 
+    // Forms fork: forward survey callbacks from the BLE layer up to the app delegate
+    override fun didReceiveSurvey(survey: com.bitchat.android.survey.Survey, fromPeer: String) {
+        delegate?.didReceiveSurvey(survey, fromPeer)
+    }
+
+    override fun didReceiveSurveyResponse(response: com.bitchat.android.survey.SurveyResponse, fromPeer: String) {
+        delegate?.didReceiveSurveyResponse(response, fromPeer)
+    }
+
+    override fun didReceiveSurveyClose(surveyId: String, fromPeer: String) {
+        delegate?.didReceiveSurveyClose(surveyId, fromPeer)
+    }
+
     override fun didReceiveVerifyChallenge(peerID: String, payload: ByteArray, timestampMs: Long) {
         delegate?.didReceiveVerifyChallenge(peerID, payload, timestampMs)
     }
