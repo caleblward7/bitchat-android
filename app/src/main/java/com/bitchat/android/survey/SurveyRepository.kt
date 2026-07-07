@@ -20,12 +20,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * Also orchestrates sending over the BLE mesh via [BluetoothMeshService].
  * The internet (Nostr) path is layered on later; the mesh path works offline now.
  */
-class SurveyRepository(
-    context: Context,
-    private val mesh: BluetoothMeshService,
-    private val nicknameProvider: () -> String
+class SurveyRepository private constructor(
+    private val appContext: Context,
+    private var mesh: BluetoothMeshService,
+    private var nicknameProvider: () -> String
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences("bitchat_forms", Context.MODE_PRIVATE)
+    private val prefs = appContext.getSharedPreferences("bitchat_forms", Context.MODE_PRIVATE)
     private val gson = Gson()
 
     private val _mySurveys = MutableStateFlow<List<Survey>>(emptyList())
@@ -57,6 +57,7 @@ class SurveyRepository(
             description = description,
             creatorID = mesh.myPeerID,
             creatorNickname = nicknameProvider(),
+            creatorNostrPub = currentNpub(),
             questions = questions,
             createdAt = System.currentTimeMillis(),
             closed = false
@@ -101,9 +102,26 @@ class SurveyRepository(
             // I authored this survey; record my own response directly.
             storeResponse(response)
         } else {
+            // Send over BLE mesh (local range) …
             mesh.sendSurveyResponse(survey.creatorID, response)
+            // … and, if we know the creator's Nostr identity, also return it over the internet.
+            // Encrypted end-to-end by the gift-wrap; reaches the creator when out of BLE range.
+            // Duplicates are deduped on the creator side by responseId.
+            survey.creatorNostrPub?.let { npub ->
+                try {
+                    com.bitchat.android.nostr.NostrTransport.getInstance(appContext).sendSurveyResponse(response, npub)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Nostr response send failed: ${e.message}")
+                }
+            }
         }
         Log.d(TAG, "Submitted response ${response.responseId} for survey ${survey.id}")
+    }
+
+    private fun currentNpub(): String? = try {
+        com.bitchat.android.nostr.NostrIdentityBridge.getCurrentNostrIdentity(appContext)?.npub
+    } catch (e: Exception) {
+        Log.w(TAG, "no Nostr identity for npub capture: ${e.message}"); null
     }
 
     // ---------------------------------------------------------------------
@@ -165,5 +183,25 @@ class SurveyRepository(
         }
     }
 
-    companion object { private const val TAG = "SurveyRepository" }
+    companion object {
+        private const val TAG = "SurveyRepository"
+        @Volatile private var INSTANCE: SurveyRepository? = null
+
+        /** Get without creating — used by the Nostr DM handler to feed inbound responses. */
+        fun tryGet(): SurveyRepository? = INSTANCE
+
+        fun getInstance(
+            context: Context,
+            mesh: BluetoothMeshService,
+            nicknameProvider: () -> String
+        ): SurveyRepository {
+            val inst = INSTANCE ?: synchronized(this) {
+                INSTANCE ?: SurveyRepository(context.applicationContext, mesh, nicknameProvider).also { INSTANCE = it }
+            }
+            // Keep transport + nickname source current across ViewModel recreation
+            inst.mesh = mesh
+            inst.nicknameProvider = nicknameProvider
+            return inst
+        }
+    }
 }

@@ -475,8 +475,49 @@ class NostrTransport(
         }
     }
     
+    // MARK: - Forms fork: survey responses over Nostr
+
+    /**
+     * Send a survey response as an encrypted Nostr DM to the survey creator's npub.
+     * Uses the sender's global Nostr identity (the creator subscribes to global-account DMs).
+     */
+    fun sendSurveyResponse(response: com.bitchat.android.survey.SurveyResponse, recipientNpub: String) {
+        val fromIdentity = try {
+            NostrIdentityBridge.getCurrentNostrIdentity(context)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendSurveyResponse: no current Nostr identity: ${e.message}"); null
+        } ?: return
+
+        val recipientHex = try {
+            val (hrp, data) = Bech32.decode(recipientNpub)
+            if (hrp != "npub") { Log.e(TAG, "sendSurveyResponse: recipient not npub (hrp=$hrp)"); return }
+            data.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "sendSurveyResponse: failed to decode npub: ${e.message}"); return
+        }
+
+        transportScope.launch {
+            try {
+                val embedded = NostrEmbeddedBitChat.encodeSurveyResponseForNostr(response, senderPeerID)
+                    ?: run { Log.e(TAG, "sendSurveyResponse: failed to embed"); return@launch }
+                val giftWraps = NostrProtocol.createPrivateMessage(
+                    content = embedded,
+                    recipientPubkey = recipientHex,
+                    senderIdentity = fromIdentity
+                )
+                giftWraps.forEach { event ->
+                    NostrRelayManager.registerPendingGiftWrap(event.id)
+                    NostrRelayManager.getInstance(context).sendEvent(event)
+                }
+                Log.d(TAG, "Sent survey response ${response.responseId.take(8)}… to ${recipientNpub.take(12)}… over Nostr")
+            } catch (e: Exception) {
+                Log.e(TAG, "sendSurveyResponse failed: ${e.message}")
+            }
+        }
+    }
+
     // MARK: - Helper Methods
-    
+
     /**
      * Resolve Nostr public key for a peer ID
      */

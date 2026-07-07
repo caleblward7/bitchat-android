@@ -172,6 +172,33 @@ object NostrEmbeddedBitChat {
     /**
      * Normalize recipient peer ID (matches iOS implementation)
      */
+    /**
+     * Forms fork: build a `bitchat1:` payload carrying a survey response for Nostr DMs.
+     * Encoded as a plain SURVEY_RESPONSE packet (privacy comes from the Nostr gift-wrap).
+     */
+    fun encodeSurveyResponseForNostr(
+        response: com.bitchat.android.survey.SurveyResponse,
+        senderPeerID: String
+    ): String? {
+        try {
+            val packet = BitchatPacket(
+                version = 2u, // v2 for 4-byte payload length; responses can be large
+                type = MessageType.SURVEY_RESPONSE.value,
+                senderID = hexStringToByteArray(senderPeerID),
+                recipientID = null,
+                timestamp = System.currentTimeMillis().toULong(),
+                payload = response.encode(),
+                signature = null,
+                ttl = com.bitchat.android.util.AppConstants.MESSAGE_TTL_HOPS
+            )
+            val data = packet.toBinaryData() ?: return null
+            return "bitchat1:" + base64URLEncode(data)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to encode survey response for Nostr: ${e.message}")
+            return null
+        }
+    }
+
     private fun normalizeRecipientPeerID(recipientPeerID: String): String {
         try {
             val maybeData = hexStringToByteArray(recipientPeerID)

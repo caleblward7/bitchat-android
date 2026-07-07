@@ -149,8 +149,8 @@ class ChatViewModel(
         notificationManager = notificationManager
     )
 
-    // Forms fork: survey/forms repository (state + persistence + mesh send orchestration)
-    val surveyRepository = com.bitchat.android.survey.SurveyRepository(
+    // Forms fork: survey/forms repository (singleton so the Nostr DM handler can feed inbound responses)
+    val surveyRepository = com.bitchat.android.survey.SurveyRepository.getInstance(
         context = application.applicationContext,
         mesh = meshService,
         nicknameProvider = { state.getNicknameValue() ?: meshService.myPeerID }

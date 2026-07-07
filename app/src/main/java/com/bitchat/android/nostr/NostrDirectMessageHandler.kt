@@ -73,6 +73,16 @@ class NostrDirectMessageHandler(
                 val packetData = base64URLDecode(base64Content) ?: return@launch
                 val packet = BitchatPacket.fromBinaryData(packetData) ?: return@launch
 
+                // Forms fork: survey responses ride the DM gift-wrap as a plain SURVEY_RESPONSE packet
+                if (packet.type == com.bitchat.android.protocol.MessageType.SURVEY_RESPONSE.value) {
+                    val resp = com.bitchat.android.survey.SurveyResponse.decode(packet.payload)
+                    if (resp != null) {
+                        com.bitchat.android.survey.SurveyRepository.tryGet()?.onResponseReceived(resp)
+                        Log.d(TAG, "Received survey response ${resp.responseId.take(8)}… over Nostr")
+                    }
+                    return@launch
+                }
+
                 if (packet.type != com.bitchat.android.protocol.MessageType.NOISE_ENCRYPTED.value) return@launch
 
                 val noisePayload = NoisePayload.decode(packet.payload) ?: return@launch
