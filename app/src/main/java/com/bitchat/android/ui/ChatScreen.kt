@@ -61,6 +61,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val showSecurityVerificationSheet by viewModel.showSecurityVerificationSheet.collectAsStateWithLifecycle()
 
     var messageText by remember { mutableStateOf(TextFieldValue("")) }
+    var showForms by remember { mutableStateOf(false) } // Forms fork: Forms surface visibility
     var showPasswordPrompt by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordInput by remember { mutableStateOf("") }
@@ -293,6 +294,25 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 }
             }
         }
+
+        // Forms fork: floating entry button to open the Forms surface (bottom-left)
+        Surface(
+            shape = CircleShape,
+            color = colorScheme.background,
+            tonalElevation = 3.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(2.dp, Color(0xFF00C851)),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 64.dp)
+                .zIndex(1.5f)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .windowInsetsPadding(WindowInsets.ime)
+        ) {
+            IconButton(onClick = { showForms = true }) {
+                Text("📋", style = MaterialTheme.typography.titleLarge)
+            }
+        }
     }
 
     // Full-screen image viewer - separate from other sheets to allow image browsing without navigation
@@ -344,6 +364,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
         showMeshPeerListSheet = showMeshPeerListSheet,
         onMeshPeerListDismiss = viewModel::hideMeshPeerList,
     )
+
+    // Forms fork: full-screen Forms overlay
+    if (showForms) {
+        com.bitchat.android.survey.ui.SurveyScreen(
+            viewModel = viewModel,
+            onClose = { showForms = false }
+        )
+    }
 }
 
 @Composable

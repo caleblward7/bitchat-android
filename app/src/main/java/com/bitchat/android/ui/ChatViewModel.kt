@@ -149,6 +149,13 @@ class ChatViewModel(
         notificationManager = notificationManager
     )
 
+    // Forms fork: survey/forms repository (state + persistence + mesh send orchestration)
+    val surveyRepository = com.bitchat.android.survey.SurveyRepository(
+        context = application.applicationContext,
+        mesh = meshService,
+        nicknameProvider = { state.getNicknameValue() ?: meshService.myPeerID }
+    )
+
 
 
 
@@ -933,7 +940,20 @@ class ChatViewModel(
     override fun isFavorite(peerID: String): Boolean {
         return meshDelegateHandler.isFavorite(peerID)
     }
-    
+
+    // Forms fork: route survey callbacks into the survey repository
+    override fun didReceiveSurvey(survey: com.bitchat.android.survey.Survey, fromPeer: String) {
+        surveyRepository.onSurveyReceived(survey)
+    }
+
+    override fun didReceiveSurveyResponse(response: com.bitchat.android.survey.SurveyResponse, fromPeer: String) {
+        surveyRepository.onResponseReceived(response)
+    }
+
+    override fun didReceiveSurveyClose(surveyId: String, fromPeer: String) {
+        surveyRepository.onSurveyClosed(surveyId)
+    }
+
     // registerPeerPublicKey REMOVED - fingerprints now handled centrally in PeerManager
     
     // MARK: - Emergency Clear
