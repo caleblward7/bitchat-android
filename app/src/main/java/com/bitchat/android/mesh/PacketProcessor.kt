@@ -149,6 +149,8 @@ class PacketProcessor(private val myPeerID: String) {
             MessageType.LEAVE -> handleLeave(routed)
             MessageType.FRAGMENT -> handleFragment(routed)
             MessageType.REQUEST_SYNC -> handleRequestSync(routed)
+            MessageType.SURVEY_PUBLISH -> handleSurveyPublish(routed) // Forms fork: broadcast survey
+            MessageType.SURVEY_CLOSE -> handleSurveyClose(routed)     // Forms fork: broadcast close
             else -> {
                 // Handle private packet types (address check required)
                 if (packetRelayManager.isPacketAddressedToMe(packet)) {
@@ -156,6 +158,7 @@ class PacketProcessor(private val myPeerID: String) {
                         MessageType.NOISE_HANDSHAKE -> handleNoiseHandshake(routed)
                         MessageType.NOISE_ENCRYPTED -> handleNoiseEncrypted(routed)
                         MessageType.FILE_TRANSFER -> handleMessage(routed)
+                        MessageType.SURVEY_RESPONSE -> handleSurveyResponse(routed) // Forms fork: response to creator
                         else -> {
                             validPacket = false
                             Log.w(TAG, "Unknown message type: ${packet.type}")
@@ -210,6 +213,22 @@ class PacketProcessor(private val myPeerID: String) {
         val peerID = routed.peerID ?: "unknown"
         Log.d(TAG, "Processing message from ${formatPeerForLog(peerID)}")
         delegate?.handleMessage(routed)
+    }
+
+    // Forms fork: survey packet handlers, routed through the delegate for parsing/delivery
+    private fun handleSurveyPublish(routed: RoutedPacket) {
+        Log.d(TAG, "Processing survey publish from ${formatPeerForLog(routed.peerID ?: "unknown")}")
+        delegate?.handleSurveyPublish(routed)
+    }
+
+    private fun handleSurveyResponse(routed: RoutedPacket) {
+        Log.d(TAG, "Processing survey response from ${formatPeerForLog(routed.peerID ?: "unknown")}")
+        delegate?.handleSurveyResponse(routed)
+    }
+
+    private fun handleSurveyClose(routed: RoutedPacket) {
+        Log.d(TAG, "Processing survey close from ${formatPeerForLog(routed.peerID ?: "unknown")}")
+        delegate?.handleSurveyClose(routed)
     }
     
     /**
@@ -319,6 +338,11 @@ interface PacketProcessorDelegate {
     fun handleLeave(routed: RoutedPacket)
     fun handleFragment(packet: BitchatPacket): BitchatPacket?
     fun handleRequestSync(routed: RoutedPacket)
+
+    // Forms fork: survey handlers (default no-ops keep other delegates unaffected)
+    fun handleSurveyPublish(routed: RoutedPacket) {}
+    fun handleSurveyResponse(routed: RoutedPacket) {}
+    fun handleSurveyClose(routed: RoutedPacket) {}
     
     // Communication
     fun sendAnnouncementToPeer(peerID: String)

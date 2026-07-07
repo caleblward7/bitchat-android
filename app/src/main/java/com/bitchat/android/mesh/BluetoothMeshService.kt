@@ -538,6 +538,38 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
             override fun handleLeave(routed: RoutedPacket) {
                 serviceScope.launch { messageHandler.handleLeave(routed) }
             }
+
+            // Forms fork: parse survey packets and forward decoded objects to the app delegate
+            override fun handleSurveyPublish(routed: RoutedPacket) {
+                val from = routed.peerID ?: "unknown"
+                val survey = com.bitchat.android.survey.Survey.decode(routed.packet.payload)
+                if (survey != null) {
+                    delegate?.didReceiveSurvey(survey, from)
+                } else {
+                    Log.w(TAG, "❌ Failed to decode SURVEY_PUBLISH from $from")
+                }
+                // Track for gossip sync like other broadcast packets
+                try { gossipSyncManager.onPublicPacketSeen(routed.packet) } catch (_: Exception) { }
+            }
+
+            override fun handleSurveyResponse(routed: RoutedPacket) {
+                val from = routed.peerID ?: "unknown"
+                val response = com.bitchat.android.survey.SurveyResponse.decode(routed.packet.payload)
+                if (response != null) {
+                    delegate?.didReceiveSurveyResponse(response, from)
+                } else {
+                    Log.w(TAG, "❌ Failed to decode SURVEY_RESPONSE from $from")
+                }
+            }
+
+            override fun handleSurveyClose(routed: RoutedPacket) {
+                val from = routed.peerID ?: "unknown"
+                val close = com.bitchat.android.survey.SurveyClose.decode(routed.packet.payload)
+                if (close != null) {
+                    delegate?.didReceiveSurveyClose(close.surveyId, from)
+                }
+                try { gossipSyncManager.onPublicPacketSeen(routed.packet) } catch (_: Exception) { }
+            }
             
             override fun handleFragment(packet: BitchatPacket): BitchatPacket? {
                 // Track broadcast fragments for gossip sync
@@ -889,6 +921,70 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
 
     fun cancelFileTransfer(transferId: String): Boolean {
         return connectionManager.cancelTransfer(transferId)
+    }
+
+    // ---------------------------------------------------------------------
+    // Forms fork: survey send API
+    // ---------------------------------------------------------------------
+
+    /** Broadcast a survey definition to the whole mesh. */
+    fun sendSurveyBroadcast(survey: com.bitchat.android.survey.Survey) {
+        serviceScope.launch {
+            val payload = survey.encode()
+            val packet = BitchatPacket(
+                version = 2u, // v2 for 4-byte payload length; surveys can be large
+                type = MessageType.SURVEY_PUBLISH.value,
+                senderID = hexStringToByteArray(myPeerID),
+                recipientID = SpecialRecipients.BROADCAST,
+                timestamp = System.currentTimeMillis().toULong(),
+                payload = payload,
+                signature = null,
+                ttl = MAX_TTL
+            )
+            val signed = signPacketBeforeBroadcast(packet)
+            broadcastRoutedPacket(RoutedPacket(signed))
+            try { gossipSyncManager.onPublicPacketSeen(signed) } catch (_: Exception) { }
+        }
+    }
+
+    /** Route a filled-out response privately back to the survey creator. */
+    fun sendSurveyResponse(creatorPeerID: String, response: com.bitchat.android.survey.SurveyResponse) {
+        if (creatorPeerID.isEmpty()) return
+        serviceScope.launch {
+            val payload = response.encode()
+            val packet = BitchatPacket(
+                version = 2u,
+                type = MessageType.SURVEY_RESPONSE.value,
+                senderID = hexStringToByteArray(myPeerID),
+                recipientID = hexStringToByteArray(creatorPeerID),
+                timestamp = System.currentTimeMillis().toULong(),
+                payload = payload,
+                signature = null,
+                ttl = MAX_TTL
+            )
+            val signed = signPacketBeforeBroadcast(packet)
+            broadcastRoutedPacket(RoutedPacket(signed))
+        }
+    }
+
+    /** Broadcast that a survey is closed to further responses. */
+    fun sendSurveyClose(surveyId: String) {
+        serviceScope.launch {
+            val payload = com.bitchat.android.survey.SurveyClose(surveyId).encode()
+            val packet = BitchatPacket(
+                version = 1u,
+                type = MessageType.SURVEY_CLOSE.value,
+                senderID = hexStringToByteArray(myPeerID),
+                recipientID = SpecialRecipients.BROADCAST,
+                timestamp = System.currentTimeMillis().toULong(),
+                payload = payload,
+                signature = null,
+                ttl = MAX_TTL
+            )
+            val signed = signPacketBeforeBroadcast(packet)
+            broadcastRoutedPacket(RoutedPacket(signed))
+            try { gossipSyncManager.onPublicPacketSeen(signed) } catch (_: Exception) { }
+        }
     }
 
     // Local helper to hash payloads to a stable hex ID for progress mapping
